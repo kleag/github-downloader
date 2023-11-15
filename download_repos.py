@@ -24,5 +24,5 @@ if 'output' not in os.listdir():
 
 
 repo_names = [repo[0] for repo in repositories]
-Parallel(n_jobs=40, prefer="threads")(
+Parallel(n_jobs=16, prefer="threads")(
     delayed(download_repo)(name) for name in tqdm(repo_names))

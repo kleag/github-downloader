@@ -172,7 +172,7 @@ def _process_repo(repo_data, repodir):
         for curdir, dirs, files in os.walk(repodir):
 
             files = [curdir + '/' + f for f in files if '.git' not in f and f[
-                0] is not '.' and 'LICENSE' not in f and 'node_modules' not in f and '.min.' not in f and f.split('.')[
+                0] != '.' and 'LICENSE' not in f and 'node_modules' not in f and '.min.' not in f and f.split('.')[
                          -1] not in bad_extensions]
 
             filenames = [f.split("/")[-1] for f in files]

@@ -34,3 +34,20 @@ The way we do that here is by restricting the minimum and maximum size of all th
 - [ ] Better command-line interface
 - [ ] Update requirements.txt
 
+## Stats
+
+With original repositories list:
+2.641.167.930 lines
+10.001.770.063 tokens
+106.585.972.613 characters
+
+With original repositories list and only C/C++ projects:
+2.535.193.093 lines 
+9.587.816.068 tokens 
+102.250.174.187 characters
+
+With updated repositories list with 80 stars and only C/C++ projects:
+3.330.647.659 lignes
+12.636.857.650 tokens
+137.160.720.047 characters
+

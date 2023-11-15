@@ -2,22 +2,27 @@
 get_repo_information.py
 
 Downloads information about all GitHub repositories
-with greater than or equal to 100 stars and are less than a gigabyte in size 
+with greater than or equal to 100 stars and are less than a gigabyte in size
 Each data record has the repository's name, number of stars, and top language
 The output is github_repositories.csv
 '''
 
-import os
+import argparse
 import json
-import time
 import math
+import os
 import pickle
 import requests
+import sys
+import time
+
 from tqdm import tqdm
 
 #~~~~~~~~~~~~~~~~~~
-USER = "noanabeshima"
-TOKEN = "14d353dfb27b03c5de0cbe56bab154cf6713dde2"
+USER = os.environ.get('GITHUB_USER') or raise RuntimeError(
+        "Please define the GITHUB_USER environment variable")
+TOKEN= os.environ.get('GITHUB_TOKEN') or raise RuntimeError(
+        "Please define the GITHUB_TOKEN environment variable")
 #~~~~~~~~~~~~~~~~~~
 
 
@@ -35,18 +40,17 @@ def save_ckpt(lower_bound: int, upper_bound: int):
     with open('repo_ckpt.pkl', 'wb') as f:
         pickle.dump((lower_bound, upper_bound, repo_list), f)
 
-def get_request(lower_bound: int, upper_bound: int, page: int = 1):
-    # Returns a request object from querying GitHub 
+def get_request(lower_bound: int, upper_bound: int, page: int = 1, stars: int = 100):
+    # Returns a request object from querying GitHub
     # for repos in-between size lower_bound and size upper_bound with over 100 stars.
     global REMAINING_REQUESTS, USER, TOKEN, repo_list
-    r = requests.get(
-           f'https://api.github.com/search/repositories?q=size:{lower_bound}..{upper_bound}+stars:>100&per_page=100&page={page}',
-           auth = (USER, TOKEN)
-           )
+    query = f'https://api.github.com/search/repositories?q=+size:{lower_bound}..{upper_bound}+stars:>{stars}&per_page=100&page={page}'
+    # print(query)
+    r = requests.get(query, auth = (USER, TOKEN))
 
     if r.status_code == 403:
             print('API rate limit exceeded.')
-            save_ckpt(lower_bound, upper_bound, repo_list)
+            save_ckpt(lower_bound, upper_bound)
             print('Exiting program.')
             exit()
     elif r.status_code == 422:
@@ -58,10 +62,10 @@ def get_request(lower_bound: int, upper_bound: int, page: int = 1):
     except:
         print(f'Unexpected status code. Status code returned is {r.status_code}')
         print(r.text)
-        save_ckpt(lower_bound, upper_bound, repo_list)
+        save_ckpt(lower_bound, upper_bound)
         print("Exiting program.")
         exit()
-    
+
     REMAINING_REQUESTS -= 1
 
     if REMAINING_REQUESTS == 0:
@@ -69,33 +73,49 @@ def get_request(lower_bound: int, upper_bound: int, page: int = 1):
         time.sleep(60)
         save_ckpt(lower_bound, upper_bound)
         REMAINING_REQUESTS = 30
-
+    # print(json.dumps(r.json()), file=sys.stderr)
     return r
 
 
-def download_range(lower_bound, upper_bound):
+def download_range(lower_bound, upper_bound, stars: int = 100):
     # Saves the names of repositories on GitHub to repo_list
     # in-between size minimum and maximum with over 100 stars.
     global repo_list
     # Github page options start at index 1.
     for page in range(1, 11):
-        r = get_request(lower_bound=lower_bound, upper_bound=upper_bound, page=page)
+        r = get_request(lower_bound=lower_bound, upper_bound=upper_bound, page=page,
+                        stars=stars)
 
+        # print(f"({lower_bound}, {upper_bound}, {page}, {stars})", file=sys.stderr)
         if page == 1:
             n_results = r.json()['total_count']
             n_query_pages = min(math.ceil(n_results/100), 10) # GitHub API capped at 1000 results
 
         for repository in r.json()['items']:
             name = repository['full_name']
-            stars = repository['stargazers_count']
+            stars_count = repository['stargazers_count']
             lang = repository['language']
-            repo_list.append((name, stars, lang)) # eg (noanabeshima/github-scraper, 1, Python)
+            # print(f"({name}, {stars_count}, {lang})", file=sys.stderr)
+            repo_list.append((name, stars_count, lang)) # eg (noanabeshima/github-scraper, 1, Python)
 
         if page >= n_query_pages:
             # No more pages available
             return n_results
 
 if __name__ == '__main__':
+    parser = argparse.ArgumentParser(
+        prog="Download ",
+        description=('Downloads information about all GitHub repositories'
+            'with greater than or equal to 100 stars by default and are less than a '
+            'gigabyte in size. Each data record has the repository\'s name, number of '
+            'stars, and top language. The default output is github_repositories.csv')
+        )
+
+    parser.add_argument("-s", "--stars", type=int, default=100,
+                        help="The minimum number of stars.")
+    parser.add_argument("-o", "--output", type=str, default='github_repositories.csv',
+                        help="The output file.")
+    args = parser.parse_args()
     # If pickled checkpoint exists, load it.
     # Otherwise, intialize repo_list as an empty list
     if 'repo_ckpt.pkl' in os.listdir():
@@ -115,13 +135,13 @@ Please delete `repo_ckpt.pkl` to restart and try again.
             ''')
         exit()
 
-    
+
     r = get_request(lower_bound, upper_bound)
 
     # Initial number of results
     n_results = r.json()['total_count']
     # Initial slope for our linear approximation.
-    slope = n_results/(upper_bound-lower_bound)
+    slope = n_results/(upper_bound - lower_bound if upper_bound > lower_bound else 1)
 
     # Main loop.
     # Breaks when all repositories considered are greater in size than a gigabyte
@@ -132,27 +152,28 @@ Please delete `repo_ckpt.pkl` to restart and try again.
             # Update upper bound to be guess by linear approximation for what range will return 1000 results
             # As GitHub repositories follow a power distribution, this tends to be an underestimate.
             upper_bound = math.floor((1000/slope) + lower_bound)
-            upper_bound = max(upper_bound, lower_bound + 1)
+            upper_bound = max(upper_bound, lower_bound)
 
             # How many results are there at our guess?
             n_results = get_request(lower_bound, upper_bound).json()['total_count']
 
             # Update the slope of our linear approximation
-            slope = n_results/(upper_bound - lower_bound)
+            slope = n_results/(upper_bound - lower_bound if upper_bound > lower_bound else 1)
 
-            print(f'size {lower_bound}..{upper_bound} ~> {n_results} results')
+            print(f'size {lower_bound}..{upper_bound} ~> {n_results} results. slope: {slope}')
             # If we get <= 1000 results over the range, exit the search loop
             # and download all repository names over the range
-            if n_results <= 1000:
+            if n_results <= 1000 or upper_bound == lower_bound:
+            # if n_results <= 1000:
                 break
 
         print(f"Downloading repositories in size range {lower_bound}..{upper_bound}")
-        download_range(lower_bound, upper_bound)
+        download_range(lower_bound, upper_bound, args.stars)
         lower_bound = upper_bound + 1
 
     save_ckpt(lower_bound, upper_bound)
 
-    with open('github_repositories.csv', 'w') as f:
+    with open(args.output, 'w') as f:
         for repo in repo_list:
             name, stars, lang = repo
             f.write(f'{name},{stars},{lang}\n')

@@ -1,6 +1,7 @@
-json=='2.0.9'
-requests=='2.21.0'
-tqdm=='4.47.0'
-joblib=='0.16.0'
-fire=='0.3.1'
+chardet
+lm_dataformat
+requests
+tqdm
+joblib
+fire
 python-magic
