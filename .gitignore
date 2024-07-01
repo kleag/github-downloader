@@ -1,0 +1,5 @@
+*.tmp
+*.pkl
+*.csv
+github-repos-c-cpp-80/
+error_log.txt
